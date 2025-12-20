@@ -7,42 +7,66 @@ from collections import defaultdict
 
 
 class GadgetCategorizer:
-    def __init__(self, input_file, arch, output_dir):
+    def __init__(self, input_file, arch, output_dir, verbose=False):
         self.input_file = input_file
         self.arch = arch
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.verbose_mode = verbose
         self.gadgets = []
         self.categories = defaultdict(list)
         self.bad_instructions = [
-            'call', 'begin', 'leave'
+            'begin', 'int', 'retn'
         ]
+        # if you leave out 'leave', you miss eip to esp gadgets like:
+        # 0x50506857  # leave; ret;
+        # so i'll add it back
+        # Note: 'call' is handled separately in is_bad_gadget()
         self.load_gadgets()
+    
+    def info(self, message):
+        """Print info message in green - always displayed"""
+        print(f"\033[92m{message}\033[0m")
+    
+    def debug(self, message):
+        """Print debug message in cyan - only displayed in verbose mode"""
+        if self.verbose_mode:
+            print(f"\033[96m{message}\033[0m")
 
     def is_bad_gadget(self, line):
         """Check if a gadget line contains bad instructions"""
         
+        # Check for call to absolute memory address (bad)
+        # e.g., "call [0x5054A03C]" is bad
+        # but "call eax" or "call [ecx+0x04]" is fine
+        if re.search(r'\bcall\s+\[0x[0-9a-fA-F]+\]', line, re.IGNORECASE):
+            return True
+        
         for bad in self.bad_instructions:
-            if bad in line.lower():
+            # Use word boundaries to match only complete instruction names
+            pattern = r'\b' + re.escape(bad) + r'\b'
+            if re.search(pattern, line, re.IGNORECASE):
                 return True
         return False
     
     def load_gadgets(self):
         """Load gadgets from rp++ output file"""
-        print(f"[+] Loading gadgets from {self.input_file}")
+        self.info(f"[+] Loading gadgets from {self.input_file}")
+
+        bad_gadgets_count = 0
         
         with open(self.input_file, 'r') as f:
             for i, line in enumerate(f):
-                line = line.strip()
+                line = line.strip().rsplit(";", 1)[0]
                 if i == 0 or i == 1:
-                    print(f"[+] rp++: {line}")
+                    self.debug(f"[+] rp++: {line}")
 
                 if "A total of" in line:
-                    print(f"[+] rp++: {line}")
+                    self.debug(f"[+] rp++: {line}")
                 if "unique gadgets found" in line:
-                    print(f"[+] rp++: {line}")
+                    self.debug(f"[+] rp++: {line}")
                 if "gadgets have been filtered because of bad-bytes" in line:
-                    print(f"[+] rp++: {line}")
+                    self.debug(f"[+] rp++: {line}")
                 
                 if not line.startswith('0x'):
                     continue
@@ -56,13 +80,18 @@ class GadgetCategorizer:
                 address = parts[0].strip()
                 instructions = parts[1].strip()
 
+                if self.is_bad_gadget(instructions):
+                    bad_gadgets_count += 1
+                    continue
+
                 self.gadgets.append({
                     'address': address,
                     'instructions': instructions,
                     'line': line
                 })
         
-        print(f"[+] Loaded {len(self.gadgets)} gadgets")
+        self.info(f"[+] Loaded {len(self.gadgets)} gadgets")
+        self.info(f"[+] Skipped {bad_gadgets_count} bad gadgets because they used {self.bad_instructions} or a bad call")
     
     def search_gadgets(self, patterns, is_regex=False):
         """Search for gadgets matching the given patterns"""
@@ -104,7 +133,7 @@ class GadgetCategorizer:
             try:
                 compiled = re.compile(regex_pattern, re.IGNORECASE)
             except re.error as e:
-                print(f"[!] Invalid pattern '{pattern}': {e}")
+                self.info(f"[!] Invalid pattern '{pattern}': {e}")
                 continue
             
             for gadget in self.gadgets:
@@ -113,11 +142,24 @@ class GadgetCategorizer:
         
         return matching
     
+    def save_filtered_copy(self):
+        """Save a copy of the input file with bad gadgets removed"""
+        input_path = Path(self.input_file)
+        output_file = self.output_dir / f"{input_path.stem}-filtered{input_path.suffix}"
+        
+        self.debug(f"[+] Writing filtered copy to {output_file}")
+        
+        with open(output_file, 'w') as f:
+            for gadget in self.gadgets:
+                f.write(f"{gadget['line']}\n")
+        
+        self.info(f"[+] Filtered copy contains {len(self.gadgets)} gadgets")
+    
     def categorize_all(self):
         """Categorize all gadgets"""
         reg_prefix = "e" if self.arch == "x86" else "r"
         
-        print(f"[+] Categorizing gadgets...")
+        self.debug(f"[+] Categorizing gadgets...")
         
         # Write-what-where (mov to memory address) - use raw regex
         patterns = [r"mov\s+(byte\s+|word\s+|dword\s+)?\["]
@@ -197,13 +239,23 @@ class GadgetCategorizer:
     
     def save_categories(self):
         """Save each category to a separate file"""
-        print(f"[+] Writing categorized gadgets to {self.output_dir}")
+        self.debug(f"[+] Writing categorized gadgets to {self.output_dir}")
+        
+        # Create subdirectories for regular and clean categories
+        regular_dir = self.output_dir / "regular"
+        clean_dir = self.output_dir / "clean"
+        regular_dir.mkdir(parents=True, exist_ok=True)
+        clean_dir.mkdir(parents=True, exist_ok=True)
         
         # Filter out large ret sizes
         gadget_filter = re.compile(r'ret 0x[0-9a-fA-F]{3,};')
         
         for category, gadgets in self.categories.items():
-            output_file = self.output_dir / f"{category}.txt"
+            # Determine which directory to use
+            if category.endswith('-clean'):
+                output_file = clean_dir / f"{category.replace('-clean', '')}.txt"
+            else:
+                output_file = regular_dir / f"{category}.txt"
             
             # Remove duplicates and filter
             seen = set()
@@ -222,12 +274,16 @@ class GadgetCategorizer:
                 for gadget in filtered:
                     f.write(f"{gadget['line']}\n")
             
-            print(f"  [{len(filtered):4d}] {category}")
+            self.debug(f"  [{len(filtered):4d}] {category}")
         
-        # Also create an all-in-one file
-        all_file = self.output_dir / "00-all-categorized.txt"
+        # Also create all-in-one files in each subdirectory
+        all_file = regular_dir / "00-all-categorized.txt"
+        all_file_clean = clean_dir / "00-all-categorized.txt"
+        
         with open(all_file, 'w') as f:
             for category, gadgets in self.categories.items():
+                if category.endswith('-clean'):
+                    continue
                 f.write(f"\n{'='*70}\n")
                 f.write(f"# {category.upper()} GADGETS\n")
                 f.write(f"{'='*70}\n\n")
@@ -241,7 +297,118 @@ class GadgetCategorizer:
                     seen.add(gadget['line'])
                     f.write(f"{gadget['line']}\n")
         
-        print(f"\n[+] All categories also written to: {all_file}")
+        with open(all_file_clean, 'w') as f:
+            for category, gadgets in self.categories.items():
+                if not category.endswith('-clean'):
+                    continue
+                f.write(f"\n{'='*70}\n")
+                f.write(f"# {category.upper().replace('-CLEAN', '')} GADGETS\n")
+                f.write(f"{'='*70}\n\n")
+                
+                seen = set()
+                for gadget in gadgets:
+                    if gadget['line'] in seen:
+                        continue
+                    if gadget_filter.search(gadget['instructions']):
+                        continue
+                    seen.add(gadget['line'])
+                    f.write(f"{gadget['line']}\n")
+        
+        self.debug(f"[+] Regular categories written to: {regular_dir}")
+        self.debug(f"[+] Clean categories written to: {clean_dir}")
+    
+    def categorize_clean(self):
+        """Categorize only single-instruction gadgets"""
+        self.debug(f"[+] Categorizing clean (single-instruction) gadgets...")
+        
+        # Filter to only single instruction gadgets
+        single_instruction_gadgets = []
+        for gadget in self.gadgets:
+            # Split by semicolon and count instructions
+            # Format is "instruction; ret; (5 found)"
+            
+            parts = [p.strip() for p in gadget['instructions'].split(';') if p.strip()]
+                
+            # Should have exactly 2 parts: the instruction and ret
+            if len(parts) == 2 and parts[1].startswith('ret'):
+                single_instruction_gadgets.append(gadget)
+        
+        self.info(f"[+] Found {len(single_instruction_gadgets)} single-instruction gadgets")
+        
+        # Temporarily use only single-instruction gadgets for categorization
+        original_gadgets = self.gadgets
+        self.gadgets = single_instruction_gadgets
+        
+        reg_prefix = "e" if self.arch == "x86" else "r"
+        
+        # Write-what-where
+        patterns = [r"mov\s+(byte\s+|word\s+|dword\s+)?\["]
+        self.categories['01-write-what-where-clean'] = self.search_gadgets(patterns, is_regex=True)
+        
+        # Pointer dereference
+        patterns = [r"mov\s+\w+,\s+(\[|dword\s+\[|byte\s+\[|word\s+\[)"]
+        self.categories['02-pointer-deref-clean'] = self.search_gadgets(patterns, is_regex=True)
+        
+        # Swap register
+        patterns = ["mov ???, ???", "xchg ???, ???"]
+        self.categories['03-swap-register-clean'] = self.search_gadgets(patterns)
+        
+        # Increment
+        patterns = ["inc ???"]
+        self.categories['04-increment-clean'] = self.search_gadgets(patterns)
+        
+        # Decrement
+        patterns = ["dec ???"]
+        self.categories['05-decrement-clean'] = self.search_gadgets(patterns)
+        
+        # Add
+        patterns = [f"add ???, {reg_prefix}??"]
+        self.categories['06-add-clean'] = self.search_gadgets(patterns)
+        
+        # Subtract
+        patterns = [f"sub ???, {reg_prefix}??"]
+        self.categories['07-subtract-clean'] = self.search_gadgets(patterns)
+        
+        # Negate
+        patterns = [f"neg {reg_prefix}??"]
+        self.categories['08-negate-clean'] = self.search_gadgets(patterns)
+        
+        # XOR
+        patterns = [f"xor {reg_prefix}??, 0x"]
+        self.categories['09-xor-clean'] = self.search_gadgets(patterns)
+        
+        # Push
+        patterns = [f"push {reg_prefix}??"]
+        self.categories['10-push-clean'] = self.search_gadgets(patterns)
+        
+        # Pushad
+        patterns = ["pushad", "pusha"]
+        self.categories['11-pushad-clean'] = self.search_gadgets(patterns)
+        
+        # Pop
+        patterns = [f"pop {reg_prefix}??"]
+        self.categories['12-pop-clean'] = self.search_gadgets(patterns)
+        
+        # Zeroize
+        zeroize_patterns = []
+        for reg in [f"{reg_prefix}ax", f"{reg_prefix}bx", f"{reg_prefix}cx", 
+                    f"{reg_prefix}dx", f"{reg_prefix}si", f"{reg_prefix}di"]:
+            zeroize_patterns.append(f"xor {reg}, {reg}")
+            zeroize_patterns.append(f"sub {reg}, {reg}")
+            zeroize_patterns.append(f"lea {reg}, 0")
+            zeroize_patterns.append(f"mov {reg}, 0")
+            zeroize_patterns.append(f"and {reg}, 0")
+        self.categories['14-zeroize-clean'] = self.search_gadgets(zeroize_patterns)
+        
+        # EIP to ESP
+        eip_to_esp = [
+            f"jmp {reg_prefix}sp",
+            f"call {reg_prefix}sp",
+        ]
+        self.categories['15-eip-to-esp-clean'] = self.search_gadgets(eip_to_esp)
+        
+        # Restore original gadgets
+        self.gadgets = original_gadgets
 
 
 def main():
@@ -268,6 +435,12 @@ def main():
         help="output directory for categorized files (default: categorized-gadgets)",
         default="categorized-gadgets",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="enable verbose output",
+    )
     
     args = parser.parse_args()
     
@@ -275,18 +448,19 @@ def main():
         print(f"[!] Error: File not found: {args.file}")
         sys.exit(1)
     
-    categorizer = GadgetCategorizer(args.file, args.arch, args.output_dir)
+    categorizer = GadgetCategorizer(args.file, args.arch, args.output_dir, args.verbose)
+    categorizer.save_filtered_copy()
     categorizer.categorize_all()
     categorizer.categorize_clean()  # only one instruction gadgets
     categorizer.save_categories()
     
-    print(f"\n[+] Done! Check the {args.output_dir} directory for results.")
-    print(f"\n[*] Usage tip:")
-    print(f"    To search for specific patterns in a category:")
-    print(f"    grep -i 'pattern' {args.output_dir}/category.txt")
-    print(f"\n    To find clean gadgets (minimal instructions):")
-    print(f"    awk '{{print length, $0}}' {args.output_dir}/category.txt | sort -n | head -20")
-
+    categorizer.info(f"\n[+] Done! Check the {args.output_dir} directory for results.")
+    if args.verbose:
+        print(f"\n[*] Usage tip:")
+        print(f"    To search for specific patterns in a category:")
+        print(f"    grep -i 'pattern' {args.output_dir}/regular/category.txt")
+        print(f"    grep -i 'pattern' {args.output_dir}/clean/category.txt")
+    
 
 if __name__ == "__main__":
     main()
