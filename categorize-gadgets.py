@@ -16,7 +16,7 @@ class GadgetCategorizer:
         self.gadgets = []
         self.categories = defaultdict(list)
         self.bad_instructions = [
-            'begin', 'int', 'retn'
+            'begin', 'int'
         ]
         # if you leave out 'leave', you miss eip to esp gadgets like:
         # 0x50506857  # leave; ret;
@@ -41,6 +41,13 @@ class GadgetCategorizer:
         # but "call eax" or "call [ecx+0x04]" is fine
         if re.search(r'\bcall\s+\[0x[0-9a-fA-F]+\]', line, re.IGNORECASE):
             return True
+        
+        # Check for retn with value > 0x200
+        retn_match = re.search(r'\bretn?\s+0x([0-9a-fA-F]+)', line, re.IGNORECASE)
+        if retn_match:
+            retn_value = int(retn_match.group(1), 16)
+            if retn_value > 0x200:
+                return True
         
         for bad in self.bad_instructions:
             # Use word boundaries to match only complete instruction names
