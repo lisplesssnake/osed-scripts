@@ -243,6 +243,7 @@ class GadgetCategorizer:
                     f"{reg_prefix}dx", f"{reg_prefix}si", f"{reg_prefix}di"]:
             eip_to_esp.append(f"xchg {reg_prefix}sp, {reg}.*jmp {reg}")
             eip_to_esp.append(f"xchg {reg_prefix}sp, {reg}.*call {reg}")
+            eip_to_esp.append(f"xchg {reg_prefix}sp, {reg}")
         self.categories['15-eip-to-esp'] = self.search_gadgets(eip_to_esp)
 
         # copy ESP
@@ -432,8 +433,13 @@ class GadgetCategorizer:
         # EIP to ESP
         eip_to_esp = [
             f"jmp {reg_prefix}sp",
-            f"call {reg_prefix}sp",
+            f"call {reg_prefix}sp",    
         ]
+        for reg in [f"{reg_prefix}ax", f"{reg_prefix}bx", f"{reg_prefix}cx", 
+                    f"{reg_prefix}dx", f"{reg_prefix}si", f"{reg_prefix}di"]:
+            eip_to_esp.append(f"xchg {reg_prefix}sp, {reg}")
+            eip_to_esp.append(f"xchg {reg}, {reg_prefix}sp")
+        
         self.categories['15-eip-to-esp-clean'] = self.search_gadgets(eip_to_esp)
 
         # copy ESP (allow 2-instruction for push/pop patterns)
