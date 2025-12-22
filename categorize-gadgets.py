@@ -237,6 +237,16 @@ class GadgetCategorizer:
             eip_to_esp.append(f"xchg {reg_prefix}sp, {reg}.*jmp {reg}")
             eip_to_esp.append(f"xchg {reg_prefix}sp, {reg}.*call {reg}")
         self.categories['15-eip-to-esp'] = self.search_gadgets(eip_to_esp)
+
+        # copy ESP
+        copy_esp = []
+        for reg in [f"{reg_prefix}ax", f"{reg_prefix}bx", f"{reg_prefix}cx", 
+                    f"{reg_prefix}dx", f"{reg_prefix}si", f"{reg_prefix}di"]:
+            copy_esp.append(f"mov {reg}, {reg_prefix}sp")
+            copy_esp.append(f"push {reg_prefix}sp ; pop {reg}")
+            
+        self.categories['16-copy-esp'] = self.search_gadgets(copy_esp)
+        
     
     def save_categories(self):
         """Save each category to a separate file"""
@@ -319,11 +329,12 @@ class GadgetCategorizer:
         self.debug(f"[+] Clean categories written to: {clean_dir}")
     
     def categorize_clean(self):
-        """Categorize only single-instruction gadgets"""
+        """Categorize only single-instruction gadgets (and some 2-instruction for specific categories)"""
         self.debug(f"[+] Categorizing clean (single-instruction) gadgets...")
         
         # Filter to only single instruction gadgets
         single_instruction_gadgets = []
+        two_instruction_gadgets = []
         for gadget in self.gadgets:
             # Split by semicolon and count instructions
             # Format is "instruction; ret; (5 found)"
@@ -333,8 +344,12 @@ class GadgetCategorizer:
             # Should have exactly 2 parts: the instruction and ret
             if len(parts) == 2 and parts[1].startswith('ret'):
                 single_instruction_gadgets.append(gadget)
+            # Should have exactly 3 parts: instruction1; instruction2; ret
+            elif len(parts) == 3 and parts[2].startswith('ret'):
+                two_instruction_gadgets.append(gadget)
         
         self.info(f"[+] Found {len(single_instruction_gadgets)} single-instruction gadgets")
+        self.info(f"[+] Found {len(two_instruction_gadgets)} two-instruction gadgets")
         
         # Temporarily use only single-instruction gadgets for categorization
         original_gadgets = self.gadgets
@@ -350,9 +365,14 @@ class GadgetCategorizer:
         patterns = [r"mov\s+\w+,\s+(\[|dword\s+\[|byte\s+\[|word\s+\[)"]
         self.categories['02-pointer-deref-clean'] = self.search_gadgets(patterns, is_regex=True)
         
-        # Swap register
+        # Swap register (allow 2-instruction for push/pop patterns)
         patterns = ["mov ???, ???", "xchg ???, ???"]
         self.categories['03-swap-register-clean'] = self.search_gadgets(patterns)
+        # Add push/pop from 2-instruction gadgets
+        self.gadgets = two_instruction_gadgets
+        patterns = ["push ???.*pop ???"]
+        self.categories['03-swap-register-clean'].extend(self.search_gadgets(patterns))
+        self.gadgets = single_instruction_gadgets
         
         # Increment
         patterns = ["inc ???"]
@@ -408,6 +428,21 @@ class GadgetCategorizer:
             f"call {reg_prefix}sp",
         ]
         self.categories['15-eip-to-esp-clean'] = self.search_gadgets(eip_to_esp)
+
+        # copy ESP (allow 2-instruction for push/pop patterns)
+        copy_esp = []
+        for reg in [f"{reg_prefix}ax", f"{reg_prefix}bx", f"{reg_prefix}cx", 
+                    f"{reg_prefix}dx", f"{reg_prefix}si", f"{reg_prefix}di"]:
+            copy_esp.append(f"mov {reg}, {reg_prefix}sp")
+        self.categories['16-copy-esp-clean'] = self.search_gadgets(copy_esp)
+        # Add push esp; pop reg from 2-instruction gadgets
+        self.gadgets = two_instruction_gadgets
+        copy_esp_2instr = []
+        for reg in [f"{reg_prefix}ax", f"{reg_prefix}bx", f"{reg_prefix}cx", 
+                    f"{reg_prefix}dx", f"{reg_prefix}si", f"{reg_prefix}di"]:
+            copy_esp_2instr.append(f"push {reg_prefix}sp.*pop {reg}")
+        self.categories['16-copy-esp-clean'].extend(self.search_gadgets(copy_esp_2instr))
+        self.gadgets = single_instruction_gadgets
         
         # Restore original gadgets
         self.gadgets = original_gadgets
