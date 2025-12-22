@@ -219,10 +219,11 @@ class GadgetCategorizer:
                     f"{reg_prefix}dx", f"{reg_prefix}si", f"{reg_prefix}di"]:
             zeroize_patterns.append(f"xor {reg}, {reg}")
             zeroize_patterns.append(f"sub {reg}, {reg}")
-            zeroize_patterns.append(f"lea {reg}, 0")
-            zeroize_patterns.append(f"mov {reg}, 0")
-            zeroize_patterns.append(f"and {reg}, 0")
-        self.categories['14-zeroize'] = self.search_gadgets(zeroize_patterns)
+            # Match exactly 0, 0x0, or 0x00 etc, not addresses like 0x10093864
+            zeroize_patterns.append(f"lea {reg}, 0x0+\\b")
+            zeroize_patterns.append(f"mov {reg}, 0x0+\\b")
+            zeroize_patterns.append(f"and {reg}, 0x0+\\b")
+        self.categories['14-zeroize'] = self.search_gadgets(zeroize_patterns, is_regex=True)
         
         # EIP to ESP
         eip_to_esp = [
@@ -395,10 +396,11 @@ class GadgetCategorizer:
                     f"{reg_prefix}dx", f"{reg_prefix}si", f"{reg_prefix}di"]:
             zeroize_patterns.append(f"xor {reg}, {reg}")
             zeroize_patterns.append(f"sub {reg}, {reg}")
-            zeroize_patterns.append(f"lea {reg}, 0")
-            zeroize_patterns.append(f"mov {reg}, 0")
-            zeroize_patterns.append(f"and {reg}, 0")
-        self.categories['14-zeroize-clean'] = self.search_gadgets(zeroize_patterns)
+            # Match exactly 0, 0x0, or 0x00 etc, not addresses like 0x10093864
+            zeroize_patterns.append(f"lea {reg}, 0x0+\\b")
+            zeroize_patterns.append(f"mov {reg}, 0x0+\\b")
+            zeroize_patterns.append(f"and {reg}, 0x0+\\b")
+        self.categories['14-zeroize-clean'] = self.search_gadgets(zeroize_patterns, is_regex=True)
         
         # EIP to ESP
         eip_to_esp = [
