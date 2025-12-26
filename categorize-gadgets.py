@@ -7,12 +7,13 @@ from collections import defaultdict
 
 
 class GadgetCategorizer:
-    def __init__(self, input_file, arch, output_dir, verbose=False):
+    def __init__(self, input_file, arch, output_dir, verbose=False, bad_bytes=None):
         self.input_file = input_file
         self.arch = arch
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.verbose_mode = verbose
+        self.bad_bytes = self.parse_bad_bytes(bad_bytes) if bad_bytes else []
         self.gadgets = []
         self.categories = defaultdict(list)
         self.bad_instructions = [
@@ -32,6 +33,36 @@ class GadgetCategorizer:
         """Print debug message in cyan - only displayed in verbose mode"""
         if self.verbose_mode:
             print(f"\033[96m{message}\033[0m")
+    
+    def parse_bad_bytes(self, bad_bytes_str):
+        """Parse bad bytes string like '00 0a 0d' into a list"""
+        if not bad_bytes_str:
+            return []
+        # Remove any commas and split by whitespace
+        bad_bytes_str = bad_bytes_str.replace(',', ' ')
+        bytes_list = [b.strip().lower() for b in bad_bytes_str.split() if b.strip()]
+        return bytes_list
+    
+    def has_bad_byte(self, address):
+        """Check if an address contains any bad bytes"""
+        if not self.bad_bytes:
+            return False
+        
+        # Remove 0x prefix if present
+        addr = address.lower().replace('0x', '')
+        
+        # Check each bad byte
+        for bad_byte in self.bad_bytes:
+            # Pad to 2 digits if needed (e.g., '0' -> '00')
+            bad_byte = bad_byte.zfill(2)
+            # Check if this byte appears in the address
+            # We need to check byte by byte (every 2 hex chars)
+            for i in range(0, len(addr), 2):
+                if i + 2 <= len(addr):
+                    addr_byte = addr[i:i+2]
+                    if addr_byte == bad_byte:
+                        return True
+        return False
 
     def is_bad_gadget(self, line):
         """Check if a gadget line contains bad instructions"""
@@ -59,8 +90,12 @@ class GadgetCategorizer:
     def load_gadgets(self):
         """Load gadgets from rp++ output file"""
         self.info(f"[+] Loading gadgets from {self.input_file}")
+        
+        if self.bad_bytes:
+            self.info(f"[+] Bad bytes filter enabled: {' '.join(self.bad_bytes).upper()}")
 
         bad_gadgets_count = 0
+        bad_bytes_count = 0
         
         with open(self.input_file, 'r') as f:
             for i, line in enumerate(f):
@@ -87,6 +122,11 @@ class GadgetCategorizer:
                 address = parts[0].strip()
                 instructions = parts[1].strip()
 
+                # Check for bad bytes in address
+                if self.has_bad_byte(address):
+                    bad_bytes_count += 1
+                    continue
+
                 if self.is_bad_gadget(instructions):
                     bad_gadgets_count += 1
                     continue
@@ -98,6 +138,8 @@ class GadgetCategorizer:
                 })
         
         self.info(f"[+] Loaded {len(self.gadgets)} gadgets")
+        if bad_bytes_count > 0:
+            self.info(f"[+] Filtered out {bad_bytes_count} gadgets with bad bytes in address")
         self.info(f"[+] Skipped {bad_gadgets_count} bad gadgets because they used {self.bad_instructions} or a bad call")
     
     def search_gadgets(self, patterns, is_regex=False):
@@ -492,6 +534,12 @@ def main():
         action="store_true",
         help="enable verbose output",
     )
+    parser.add_argument(
+        "-b",
+        "--bad-bytes",
+        help="bad bytes to filter from gadget addresses (e.g., '00 0a 0d' or '00,0a,0d')",
+        default=None,
+    )
     
     args = parser.parse_args()
     
@@ -499,7 +547,7 @@ def main():
         print(f"[!] Error: File not found: {args.file}")
         sys.exit(1)
     
-    categorizer = GadgetCategorizer(args.file, args.arch, args.output_dir, args.verbose)
+    categorizer = GadgetCategorizer(args.file, args.arch, args.output_dir, args.verbose, args.bad_bytes)
     categorizer.save_filtered_copy()
     categorizer.categorize_all()
     categorizer.categorize_clean()  # only one instruction gadgets
