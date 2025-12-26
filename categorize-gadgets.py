@@ -17,7 +17,7 @@ class GadgetCategorizer:
         self.gadgets = []
         self.categories = defaultdict(list)
         self.bad_instructions = [
-            'begin', 'int'
+            'begin', 'int', 'call', 'jmp'
         ]
         # if you leave out 'leave', you miss eip to esp gadgets like:
         # 0x50506857  # leave; ret;
