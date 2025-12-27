@@ -618,10 +618,6 @@ def main(args):
         f.close()
     print(f"[=]   help:")
     print(help_msg)
-    print("\t Remove bad chars with msfvenom (use --store-shellcode flag): ")
-    print(
-        '\t\t cat shellcode.bin | msfvenom --platform windows -a x86 -e x86/shikata_ga_nai -b "\\x00\\x0a\\x0d\\x25\\x26\\x2b\\x3d" -f python -v shellcode'
-    )
     print()
     print(final)
 
