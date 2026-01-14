@@ -295,6 +295,8 @@ class GadgetCategorizer:
             copy_esp.append(f"mov {reg}, {reg_prefix}sp")
             copy_esp.append(f"push {reg_prefix}sp ; pop {reg}")
             copy_esp.append(f"push {reg_prefix}sp .* pop {reg}")
+            copy_esp.append(f"xchg {reg_prefix}sp, {reg}")
+            copy_esp.append(f"xchg {reg}, {reg_prefix}sp")
             
         self.categories['16-copy-esp'] = self.search_gadgets(copy_esp)
         
