@@ -33,6 +33,10 @@ class GadgetCategorizer:
         """Print debug message in cyan - only displayed in verbose mode"""
         if self.verbose_mode:
             print(f"\033[96m{message}\033[0m")
+
+    def warning(self, message):
+        """Print warning message"""
+        print(f"\033[95m{message}\033[0m")
     
     def parse_bad_bytes(self, bad_bytes_str):
         """Parse bad bytes string like '00 0a 0d' into a list"""
@@ -563,6 +567,7 @@ def main():
         print(f"    To search for specific patterns in a category:")
         print(f"    grep -i 'pattern' {args.output_dir}/regular/category.txt")
         print(f"    grep -i 'pattern' {args.output_dir}/clean/category.txt")
+    categorizer.warning(f"!!!! DO NOT REMOVE BADCHARS WITH RP++ (BUGGY), LET THIS SCRIPT HANDLE IT!!!")
     
 
 if __name__ == "__main__":
