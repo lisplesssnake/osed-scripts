@@ -295,8 +295,8 @@ class GadgetCategorizer:
             copy_esp.append(f"mov {reg}, {reg_prefix}sp")
             copy_esp.append(f"push {reg_prefix}sp ; pop {reg}")
             copy_esp.append(f"push {reg_prefix}sp .* pop {reg}")
-            copy_esp.append(f"xchg {reg_prefix}sp, {reg}")
-            copy_esp.append(f"xchg {reg}, {reg_prefix}sp")
+            # copy_esp.append(f"xchg {reg_prefix}sp, {reg}")
+            # copy_esp.append(f"xchg {reg}, {reg_prefix}sp")
             
         self.categories['16-copy-esp'] = self.search_gadgets(copy_esp)
         
@@ -492,8 +492,8 @@ class GadgetCategorizer:
         for reg in [f"{reg_prefix}ax", f"{reg_prefix}bx", f"{reg_prefix}cx", 
                     f"{reg_prefix}dx", f"{reg_prefix}si", f"{reg_prefix}di"]:
             copy_esp.append(f"mov {reg}, {reg_prefix}sp")
-            copy_esp.append(f"xchg {reg_prefix}sp, {reg}")
-            copy_esp.append(f"xchg {reg}, {reg_prefix}sp")
+            # copy_esp.append(f"xchg {reg_prefix}sp, {reg}")
+            # copy_esp.append(f"xchg {reg}, {reg_prefix}sp")
         self.categories['16-copy-esp-clean'] = self.search_gadgets(copy_esp)
         # Add push esp; pop reg from 2-instruction gadgets
         self.gadgets = two_instruction_gadgets
