@@ -600,7 +600,7 @@ def main(args):
         if not bad_instruction_found:
             print("[!] Could not pinpoint specific instructions (might be in multi-line constructs)")
         
-        print(f"[=] Full shellcode: {final}", file=sys.stderr)
+        print(f"[=] Full shellcode, size {len(encoding)} bytes (might slightly change after fixing bad bytes)\n{final}", file=sys.stderr)
         raise SystemExit("\n[!] Remove bad characters and try again")
 
     print(f"[+] shellcode created!")
