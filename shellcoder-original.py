@@ -600,8 +600,8 @@ def main(args):
         if not bad_instruction_found:
             print("[!] Could not pinpoint specific instructions (might be in multi-line constructs)")
         
-        print(f"[=] Full shellcode: {final}", file=sys.stderr)
-        raise SystemExit("\n[!] Remove bad characters and try again")
+        print(f"[=] Full shellcode, size {len(encoding)} bytes (might slightly change after fixing bad bytes)\n{final}", file=sys.stderr)
+        # raise SystemExit("\n[!] Remove bad characters and try again")
 
     print(f"[+] shellcode created!")
     print(f"[=]   len:   {len(encoding)} bytes")
@@ -618,10 +618,6 @@ def main(args):
         f.close()
     print(f"[=]   help:")
     print(help_msg)
-    print("\t Remove bad chars with msfvenom (use --store-shellcode flag): ")
-    print(
-        '\t\t cat shellcode.bin | msfvenom --platform windows -a x86 -e x86/shikata_ga_nai -b "\\x00\\x0a\\x0d\\x25\\x26\\x2b\\x3d" -f python -v shellcode'
-    )
     print()
     print(final)
 
